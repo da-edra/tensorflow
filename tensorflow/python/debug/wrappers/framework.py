@@ -121,7 +121,9 @@ from tensorflow.python.debug.lib import debug_utils
 from tensorflow.python.debug.lib import stepper
 from tensorflow.python.framework import errors
 from tensorflow.python.framework import ops
+from tensorflow.python.platform import tf_logging
 from tensorflow.python.training import monitored_session
+from tensorflow.python.util import nest
 
 
 # Helper function.
@@ -154,8 +156,7 @@ class OnSessionInitRequest(object):
       sess: A tensorflow Session object.
     """
 
-    _check_type(sess, (session.SessionInterface,
-                       monitored_session.MonitoredSession))
+    _check_type(sess, (session.BaseSession, monitored_session.MonitoredSession))
     self.session = sess
 
 
@@ -359,8 +360,7 @@ class BaseDebugWrapperSession(session.SessionInterface):
       NotImplementedError: If a non-DirectSession sess object is received.
     """
 
-    _check_type(sess, (session.SessionInterface,
-                       monitored_session.MonitoredSession))
+    _check_type(sess, (session.BaseSession, monitored_session.MonitoredSession))
 
     # The session being wrapped.
     self._sess = sess
@@ -441,7 +441,12 @@ class BaseDebugWrapperSession(session.SessionInterface):
             "callable_runner and fetches/feed_dict are mutually exclusive, but "
             "are used simultaneously.")
 
-    if self._is_disabled_thread():
+    empty_fetches = not nest.flatten(fetches)
+    if empty_fetches:
+      tf_logging.info(
+          "Due to empty fetches, tfdbg Session wrapper is letting a "
+          "Session.run pass through without any debugging actions.")
+    if self._is_disabled_thread() or empty_fetches:
       if callable_runner:
         return callable_runner(*callable_runner_args)
       else:

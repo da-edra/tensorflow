@@ -18,6 +18,7 @@ limitations under the License.
 #include <string>
 #include "tensorflow/core/lib/core/status_test_util.h"
 #include "tensorflow/core/lib/core/stringpiece.h"
+#include "tensorflow/core/lib/strings/str_util.h"
 #include "tensorflow/core/platform/test.h"
 
 namespace xla {
@@ -25,7 +26,6 @@ namespace tools {
 namespace {
 
 using tensorflow::StringPiece;
-using tensorflow::strings::StrCat;
 
 struct TestData {
   string test_name;
@@ -55,6 +55,18 @@ ENTRY %axpy.v5 (alpha: f32[], x: f32[2,4], y: f32[2,4]) -> f32[2,4] {
   %multiply = f32[2,4]{1,0} multiply(f32[2,4]{1,0} %broadcast, f32[2,4]{1,0} %x)
   %y = f32[2,4]{1,0} parameter(2)
   ROOT %add = f32[2,4]{1,0} add(f32[2,4]{1,0} %multiply, f32[2,4]{1,0} %y)
+}
+
+)"
+},
+// broadcast size-one dimensions
+{
+"BroadcastDimOne",
+R"(HloModule broadcast_dim_one_module
+
+ENTRY %broadcast-dim-one () -> f32[2,2] {
+  %constant = f32[1,2]{1,0} constant(f32[1,2] { { 1.1, 2.2 } })
+  ROOT %broadcast-dim-one = f32[2,2]{1,0} broadcast-dim-one(f32[1,2]{1,0} %constant)
 }
 
 )"
@@ -688,7 +700,49 @@ ENTRY %fusion.v3 () -> f32[3,2,1,1] {
 }
 
 )"
+},
+{
+"Sparse",
+R"(HloModule sparse_f32
+
+ENTRY %sparse () -> f32[2,3,4] {
+  ROOT %foo = f32[2,3,4]sparse{10} constant(f32[2,3,4]{[0, 1, 2]: 1, [1, 2, 3]: 2, [2, 3, 4]: 3})
 }
+
+)"
+},
+{
+"SparseEmpty",
+R"(HloModule sparse_f32_empty
+
+ENTRY %sparse_f32_empty () -> f32[2,3,4] {
+  ROOT %foo = f32[2,3,4]sparse{10} constant(f32[2,3,4]{})
+}
+
+)"
+},
+{
+"SparseR1",
+R"(HloModule sparse_f32_r1
+
+ENTRY %sparse_f32_r1 () -> f32[9] {
+  ROOT %foo = f32[9]sparse{10} constant(f32[9]{1: 2, 3: 4, 5: 6})
+}
+
+)"
+},
+{
+"gather",
+R"(HloModule StringifyGather
+
+ENTRY %Gather (input_tensor: f32[50,49,48,47,46], gather_indices: s64[10,9,8,7,5]) -> f32[10,9,8,7,30,29,28,27,26] {
+  %input_tensor = f32[50,49,48,47,46]{4,3,2,1,0} parameter(0)
+  %gather_indices = s64[10,9,8,7,5]{4,3,2,1,0} parameter(1)
+  ROOT %gather = f32[10,9,8,7,30,29,28,27,26]{8,7,6,5,4,3,2,1,0} gather(f32[50,49,48,47,46]{4,3,2,1,0} %input_tensor, s64[10,9,8,7,5]{4,3,2,1,0} %gather_indices), output_window_dims={4,5,6,7,8}, elided_window_dims={}, gather_dims_to_operand_dims={0,1,2,3,4}, index_vector_dim=4, window_bounds={30,29,28,27,26}
+}
+
+)"
+},
   });
   // clang-format on
 }
@@ -833,6 +887,18 @@ ENTRY dot {
 
 )"
 },
+{
+"gather",
+R"(HloModule gather
+
+ENTRY Gather {
+  input_tensor = f32[50,49,48,47,46]{4,3,2,1,0} parameter(0)
+  gather_indices = s64[10,9,8,7,5]{4,3,2,1,0} parameter(1)
+  ROOT gather = f32[10,9,8,7,30,29,28,27,26]{8,7,6,5,4,3,2,1,0} gather(input_tensor, gather_indices), output_window_dims={4,5,6,7,8}, elided_window_dims={}, gather_dims_to_operand_dims={0,1,2,3,4}, index_vector_dim=4, window_bounds={30,29,28,27,26}
+}
+
+)"
+},
   });
   // clang-format on
 }
@@ -841,7 +907,7 @@ class HloParserTest : public ::testing::Test,
                       public ::testing::WithParamInterface<TestData> {
  protected:
   static void ExpectHasSubstr(StringPiece s, StringPiece expected) {
-    EXPECT_TRUE(StringPiece(s).contains(expected))
+    EXPECT_TRUE(tensorflow::str_util::StrContains(s, expected))
         << "'" << s << "' does not contain '" << expected << "'";
   }
 
@@ -1058,12 +1124,14 @@ ENTRY %Convolve1D1Window_0.v3 (input: f32[1,2,1], filter: f32[1,1,1]) -> f32[1,2
 
 )";
 
-  ExpectHasSubstr(Parse(StrCat(prefix, ",dim_labels=00_01_10", suffix))
-                      .status()
-                      .error_message(),
-                  "expects dim labels pattern");
+  ExpectHasSubstr(
+      Parse(tensorflow::strings::StrCat(prefix, ",dim_labels=00_01_10", suffix))
+          .status()
+          .error_message(),
+      "expects dim labels pattern");
 
-  ExpectHasSubstr(Parse(StrCat(prefix, ",dim_labels=010_1100->010", suffix))
+  ExpectHasSubstr(Parse(tensorflow::strings::StrCat(
+                            prefix, ",dim_labels=010_1100->010", suffix))
                       .status()
                       .error_message(),
                   "must have the same rank");
@@ -1242,6 +1310,35 @@ ENTRY consts {
 })";
   ExpectHasSubstr(Parse(original).status().error_message(),
                   "one computation should have only one ROOT");
+}
+
+TEST_F(HloParserTest, InstructionExists) {
+  const string original = R"(HloModule comp_exists
+c1 {
+  instr = f32[1]{0} constant({12345})
+}
+c2 {
+  instr = f32[1]{0} constant({67890})
+})";
+
+  ExpectHasSubstr(Parse(original).status().error_message(),
+                  R"(was parsing 3:3: error: instruction previously defined here
+  instr = f32[1]{0} constant({12345})
+  ^)");
+}
+
+TEST_F(HloParserTest, ComputationExists) {
+  const string original = R"(HloModule comp_exists
+comp {
+  const1 = f32[1]{0} constant({12345})
+}
+comp {
+  const2 = f32[1]{0} constant({67890})
+})";
+  ExpectHasSubstr(Parse(original).status().error_message(),
+                  R"(was parsing 2:1: error: computation previously defined here
+comp {
+^)");
 }
 
 }  // namespace

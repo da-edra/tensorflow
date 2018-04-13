@@ -13,8 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
-#ifndef THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
-#define THIRD_PARTY_TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
+#ifndef TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
+#define TENSORFLOW_CORE_DISTRIBUTED_RUNTIME_MESSAGE_WRAPPERS_H_
 
 #include "tensorflow/core/framework/allocator.h"
 #include "tensorflow/core/framework/cost_graph.pb.h"
@@ -302,6 +302,9 @@ class MutableRunGraphRequestWrapper : public RunGraphRequestWrapper {
   virtual Status AddSendFromRunStepRequest(
       const RunStepRequestWrapper& run_step_request, size_t i,
       const string& send_key) = 0;
+  virtual Status AddSendFromRunCallableRequest(
+      const RunCallableRequest& run_callable_request, size_t i,
+      const string& send_key) = 0;
 
   virtual void add_recv_key(const string& recv_key) = 0;
   virtual void set_is_partial(bool is_partial) = 0;
@@ -333,6 +336,9 @@ class InMemoryRunGraphRequest : public MutableRunGraphRequestWrapper {
   ExecutorOpts* mutable_exec_opts() override;
   Status AddSendFromRunStepRequest(
       const RunStepRequestWrapper& run_step_request, size_t i,
+      const string& send_key) override;
+  Status AddSendFromRunCallableRequest(
+      const RunCallableRequest& run_callable_request, size_t i,
       const string& send_key) override;
   void add_recv_key(const string& recv_key) override;
   void set_is_partial(bool is_partial) override;
@@ -384,6 +390,9 @@ class MutableProtoRunGraphRequest : public MutableRunGraphRequestWrapper {
   ExecutorOpts* mutable_exec_opts() override;
   Status AddSendFromRunStepRequest(
       const RunStepRequestWrapper& run_step_request, size_t i,
+      const string& send_key) override;
+  Status AddSendFromRunCallableRequest(
+      const RunCallableRequest& run_callable_request, size_t i,
       const string& send_key) override;
   void add_recv_key(const string& recv_key) override;
   void set_is_partial(bool is_partial) override;
@@ -702,4 +711,4 @@ class NonOwnedProtoRunStepResponse : public MutableRunStepResponseWrapper {
 
 }  // namespace tensorflow
 
-#endif  // THIRD_PARTY_TENSORFLOW
+#endif  // TENSORFLOW
